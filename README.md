@@ -18,7 +18,7 @@
 
 1. **Скачайте и распакуйте** [последнюю версию релиза](https://github.com/ApTyp4uK1337/JabTap-AutoClicker/releases).
 2. **Установите зависимости** » ```npm install```
-3. **Вставьте свой токен JABKA.SKINS** в файл `config.json`
+3. **Вставьте свой [токен JABKA.SKINS](https://github.com/ApTyp4uK1337/JabTap-AutoClicker#%D0%B3%D0%B4%D0%B5-%D0%B4%D0%BE%D1%81%D1%82%D0%B0%D1%82%D1%8C-%D1%82%D0%BE%D0%BA%D0%B5%D0%BD)** в файл `config.json`
 4. **Запустите автокликер** командой » ```node app```
 
 ## Где достать токен?
