@@ -43,8 +43,8 @@ async function checkAuthorization() {
             console.log(`====================================`);
             console.log(`[        JabTap AutoClicker        ]`);
             console.log(`====================================`);
-            console.log(`|   ID аккаунта: 777`);
-            console.log(`|   Никнейм: root`);
+            console.log(`|   ID аккаунта: ${data.data.frog.user.id}`);
+            console.log(`|   Никнейм: ${data.data.frog.user.nickname}`);
             console.log(`====================================`);
             console.log(`» Запускаем кликер...`);
 
@@ -137,7 +137,7 @@ async function main() {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        'Authorization': config.token
     };
 
     postBody = {
