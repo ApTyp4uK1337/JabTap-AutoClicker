@@ -10,13 +10,22 @@ let getUrl;
 let headers;
 let postBody;
 
-// Глобальные переменные для хранения данных
 let initialBalance = 0;
 let earnedThisSession = 0;
 let clickCounter = 0;
-let energyOk = true; // Флаг для контроля состояния энергии
+let currentEnergy = 0;
+let currentBalance = 0;
+let currentExperience = 0;
+let experienceToNextLevel = 0;
+let totalEnergy = 0;
+let levelName = '';
+let nextRechargeAt = null;
+let energyOk = true;
 
-// Функция для чтения и парсинга JSON-файлов
+const energyCheckInterval = 5000; // Интервал проверки энергии в мс
+const lowEnergyCheckInterval = 60000; // Увеличенный интервал проверки энергии, когда она закончилась
+const statsUpdateInterval = 10; // Интервал обновления статистики по количеству кликов
+
 async function readJsonFile(filePath) {
     try {
         const data = await fs.readFile(filePath, 'utf8');
@@ -27,15 +36,13 @@ async function readJsonFile(filePath) {
     }
 }
 
-// Функция задержки
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Функция проверки авторизации
 async function checkAuthorization() {
     try {
-        const response = await axios.get(`${getUrl}?_=${Date.now()}`, { headers }); // Кэш-бустер
+        const response = await axios.get(`${getUrl}?_=${Date.now()}`, { headers });
         const data = response.data;
 
         if (data && data.data && data.data.frog) {
@@ -48,8 +55,20 @@ async function checkAuthorization() {
             console.log(`====================================`);
             console.log(`» Запускаем кликер...`);
 
-            // Изначально проверяем энергию
-            return await printStats();
+            const frogData = data.data.frog;
+            currentEnergy = frogData.remainingEnergy;
+            currentBalance = parseFloat(frogData.balance);
+            currentExperience = parseFloat(frogData.experience);
+            totalEnergy = frogData.energyLevel.energy;
+            experienceToNextLevel = parseFloat(frogData.level.requirement) - frogData.experience;
+            levelName = frogData.level.name;
+            nextRechargeAt = parseISO(frogData.nextRechargeAt);
+
+            if (initialBalance === 0) {
+                initialBalance = currentBalance;
+            }
+
+            return true;
         } else {
             console.error('[!] Авторизация не удалась.');
             return false;
@@ -60,72 +79,100 @@ async function checkAuthorization() {
     }
 }
 
-// Функция проверки уровня энергии и вывода статистики
-async function printStats() {
+let previousEnergyOk = true; // Флаг для отслеживания предыдущего состояния энергии
+
+async function checkEnergy() {
     try {
-        const response = await axios.get(`${getUrl}?_=${Date.now()}`, { headers }); // Кэш-бустер
+        const response = await axios.get(`${getUrl}?_=${Date.now()}`, { headers });
         const data = response.data;
 
         if (!data || !data.data || !data.data.frog) {
             console.error('[!] Не удалось получить данные из GET-запроса.');
-            return false;
+            return;
         }
 
         const frogData = data.data.frog;
-        const experienceToNextLevel = parseFloat(frogData.experience) + parseFloat(frogData.level.requirement);
-        const nextRechargeAt = parseISO(frogData.nextRechargeAt);
-        const timeUntilRecharge = formatDistanceToNow(nextRechargeAt, { includeSeconds: true });
+        currentEnergy = frogData.remainingEnergy;
+        currentBalance = parseFloat(frogData.balance);
+        currentExperience = parseFloat(frogData.experience);
+        totalEnergy = frogData.energyLevel.energy;
+        experienceToNextLevel = parseFloat(frogData.level.requirement) - frogData.experience;
+        levelName = frogData.level.name;
+        nextRechargeAt = parseISO(frogData.nextRechargeAt);
 
-        if (initialBalance === 0) {
-            initialBalance = parseFloat(frogData.balance); // Сохраняем начальный баланс
+        // Убедимся, что энергия выше нуля перед попыткой клика
+        energyOk = currentEnergy > 0;
+
+        if (energyOk && !previousEnergyOk) {
+            // Энергия восстановлена
+            clearInterval(energyCheckTimer); // Очищаем увеличенный интервал
+            energyCheckTimer = setInterval(checkEnergy, energyCheckInterval); // Восстанавливаем стандартный интервал
+            console.log(`» Энергия восстановлена! Возобновление работы кликера.`);
+        } else if (!energyOk && previousEnergyOk) {
+            // Энергия закончилась
+            clearInterval(energyCheckTimer); // Очищаем старый интервал
+            energyCheckTimer = setInterval(checkEnergy, lowEnergyCheckInterval); // Устанавливаем увеличенный интервал
+            const timeUntilRecharge = formatDistanceToNow(nextRechargeAt, { includeSeconds: true });
+            console.log(`» Энергия закончилась. Проверка возобновится через ${timeUntilRecharge}.`);
         }
 
-        const currentBalance = parseFloat(frogData.balance);
-        earnedThisSession = currentBalance - initialBalance;
-
-        console.log('');
-        console.log(`====================================`);
-        console.log(`[        JabTap AutoClicker        ]`);
-        console.log(`====================================`);
-        console.log(`|   Уровень: [${frogData.level.name}] | EXP: ${Math.floor(frogData.experience)}/${Math.ceil(experienceToNextLevel)}`);
-        console.log(`|   Энергия: ${frogData.remainingEnergy}/${frogData.energyLevel.energy}`);
-        console.log(`|   Текущий баланс: ${Math.floor(frogData.balance)} MUH`);
-        console.log(`|   Заработано за сессию: ${Math.floor(earnedThisSession.toFixed(2))} MUH`);
-        console.log(`====================================`);
-        console.log('» Обновление энергии через:', timeUntilRecharge);
-        console.log('');
-
         // Обновляем флаг состояния энергии
-        energyOk = frogData.remainingEnergy > 0;
+        previousEnergyOk = energyOk;
 
-        return energyOk;
     } catch (error) {
-        console.error('[!] Ошибка при получении статистики:', error.response ? error.response.data : error.message);
-        return false;
+        console.error('[!] Ошибка при проверке уровня энергии:', error.response ? error.response.data : error.message);
     }
 }
 
-// Функция отправки POST-запроса
 async function sendRequest() {
+    if (currentEnergy <= 0) {
+        energyOk = false;
+        return false;
+    }
+
+    const adjustedTapsCount = Math.min(config.tapsCount, currentEnergy);
+    postBody.tapsCount = adjustedTapsCount;
+
     try {
         const response = await axios.post(postUrl, postBody, { headers });
         const { data } = response;
 
         if (data.success === true) {
             clickCounter++;
-            console.log(`» Click: +${config.tapsCount} MUH`);
+            currentBalance += adjustedTapsCount;
+            currentExperience += adjustedTapsCount;
+            currentEnergy -= adjustedTapsCount;
+            experienceToNextLevel -= adjustedTapsCount;
+            console.log(`» Click: +${adjustedTapsCount} MUH`);
             return true;
         } else {
-            console.log('[!] Запрос не удался.');
+            console.log('[!] Запрос завершился неудачно.');
             return false;
         }
     } catch (error) {
         console.error('[!] Ошибка при отправке запроса:', error.response ? error.response.data : error.message);
-        return false;
+        // Продолжаем работу даже при ошибке
+        return true; // возвращаем true, чтобы не выйти из цикла
     }
 }
 
-// Основная функция
+async function updateStats() {
+    earnedThisSession = currentBalance - initialBalance;
+    const timeUntilRecharge = formatDistanceToNow(nextRechargeAt, { includeSeconds: true });
+
+    console.log('');
+    console.log(`====================================`);
+    console.log(`[        JabTap AutoClicker        ]`);
+    console.log(`====================================`);
+    console.log(`|   Уровень: [${levelName}] | EXP: ${Math.floor(currentExperience)}/${Math.ceil(currentExperience + experienceToNextLevel)}`);
+    console.log(`|   Энергия: ${currentEnergy}/${totalEnergy}`);
+    console.log(`|   Текущий баланс: ${Math.floor(currentBalance)} MUH`);
+    console.log(`|   Заработано за сессию: ${Math.floor(earnedThisSession.toFixed(2))} MUH`);
+    console.log(`====================================`);
+    console.log('» Обновление энергии через:', timeUntilRecharge);
+    console.log('');
+}
+
 async function main() {
     packageJSON = await readJsonFile('package.json');
     config = await readJsonFile('config.json');
@@ -159,31 +206,40 @@ async function main() {
         return;
     }
 
-    const energyCheckInterval = 5000; // Интервал для проверки статистики (в миллисекундах)
+    // Обновляем статистику сразу после авторизации
+    await updateStats();
 
-    // Таймер для обновления статистики
-    setInterval(async () => {
-        if (energyOk) {
-            await printStats(); // Обновляем статистику через интервал
-        }
-    }, energyCheckInterval);
+    energyCheckTimer = setInterval(checkEnergy, energyCheckInterval);
 
-    // Основной цикл отправки запросов
+    let clickCounter = 0; // Счетчик кликов
+
     while (true) {
+        // Обновляем информацию о текущей энергии
+        await checkEnergy();
+
+        // Если энергии недостаточно, приостанавливаем цикл
         if (!energyOk) {
-            console.log(`» Энергия закончилась, кликер приостановлен, повторная попытка через ${energyCheckInterval} мс.`);
             await delay(energyCheckInterval);
             continue;
         }
 
+        // Пытаемся отправить запрос на клик
         const success = await sendRequest();
 
         if (!success) {
-            console.log('[!] Запрос не удался. Выход из цикла.');
-            break;
+            console.log('[!] Запрос не удался. Продолжаем попытки...');
+            continue; // продолжаем попытки, даже если запрос не удался
         }
 
-        await delay(config.clickDelay); // Задержка перед следующим POST-запросом
+        clickCounter++;
+
+        // Обновляем статистику каждые 10 кликов
+        if (clickCounter % statsUpdateInterval === 0) {
+            await updateStats();
+        }
+
+        // Ожидание перед следующим кликом
+        await delay(config.clickDelay);
     }
 
     console.log('Конечное состояние достигнуто. Завершение.');
